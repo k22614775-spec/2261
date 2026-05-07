@@ -1,0 +1,2173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="宜修待辦">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon.png">
+  <link rel="icon" href="data:;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==">
+  <title>宜修的待辦清單</title>
+  <style>
+    :root {
+      --primary:#007AFF; --red:#FF3B30; --green:#34C759;
+      --orange:#FF9500; --gray:#8E8E93; --label:#1C1C1E;
+      --bg:#F2F2F7; --card:#FFFFFF; --sep:#3A3A3C;
+      --sat:env(safe-area-inset-top,59px);
+      --sab:env(safe-area-inset-bottom,34px);
+      --sidebar-bg:#1C1C1E;
+      --cat-h:48px;
+    }
+    *,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html{height:100%;overflow:hidden;}
+    body{
+      position:fixed;inset:0;
+      display:flex;flex-direction:row;
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+      -webkit-font-smoothing:antialiased;
+      background:var(--sidebar-bg);
+    }
+
+    /* ══ 側欄 ══ */
+    #sidebar{
+      width:88px;flex-shrink:0;
+      height:100dvh;box-sizing:border-box;
+      background:var(--sidebar-bg);
+      display:flex;flex-direction:column;
+      transition:width 0.26s cubic-bezier(.32,.72,0,1);
+      overflow:hidden;position:relative;
+    }
+    #sideGap{flex-shrink:0;height:calc(var(--sat) + 60px);}
+    #sideList{
+      overflow-y:scroll;overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      height:calc(100dvh - var(--sat) - 60px - 110px - var(--sab));
+      padding:2px 0 8px;
+    }
+    #sideList::-webkit-scrollbar{display:none;}
+
+    /* FAB：固定在側欄頂部中間，left 由 JS 控制 */
+#fab {
+  position: fixed;
+  top: calc(var(--sat) + 6px);
+  /* 使用 !important 確保不隨 sideState 的變動而置中 */
+  left: 14px !important; 
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0,122,255,.42);
+  cursor: pointer;
+  /* 確保層級正確 */
+  z-index: 90; 
+  transition: transform .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+    #fab:active{transform:scale(.9);}
+
+    /* 分類項目 */
+.scat {
+  position: relative;
+  height: var(--cat-h);
+  display: flex;
+  align-items: center;
+  /* 取消置中，改為靠左排列 */
+  justify-content: flex-start !important; 
+  /* 這裡的 padding-left 是關鍵，調整至 14px 與 FAB 和底部按鈕對齊 */
+  padding: 0 0 0 14px !important; 
+  margin: 2px 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: visible;
+}
+
+    .scat.active{background:var(--primary);}
+    .scat:active{opacity:0.72;}
+    .scat-abbr{
+      font-size:17px;font-weight:600;color:rgba(255,255,255,0.9);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
+    }
+.scat-abbr {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  white-space: nowrap;
+  /* 強制靠左對齊，取消置中 */
+  text-align: left !important;
+  /* 不要寬度 100%，否則 text-align 可能會失效 */
+  width: auto !important; 
+  pointer-events: none;
+}
+
+.scat-label {
+  display: none; /* 窄版隱藏 */
+  flex: 1;       /* 核心：佔滿中間剩餘空間，將 count 推向右側 */
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+    .scat-count{display:none;font-size:12px;font-weight:500;color:rgba(255,255,255,0.5)!important;margin-left: auto;margin-right: 8px;flex-shrink:0;}
+    /* 系統分類圖示 */
+    .scat-icon{
+      width:28px;height:28px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;pointer-events:none;
+    }
+    .scat-icon.today  { background:#FF3B30; }
+    .scat-icon.all    { background:#007AFF; }
+    .scat-icon.done   { background:#34C759; }
+    /* 窄版：只顯示圖示，隱藏文字 */
+    .scat-sys .scat-abbr  { display:none; }
+    .scat-sys .scat-label { display:none; }
+    /* 寬版：圖示 + 文字並排 */
+    #sidebar.wide .scat-sys .scat-label { display:block; }
+    .scat.active .scat-abbr,.scat.active .scat-label{color:#fff;font-weight:800;}
+    .scat.active .scat-count{color:rgba(255,255,255,0.75);}
+    
+/* 新增：寬版模式下強制顯示數字 */
+#sidebar.wide .scat-count {
+  display: block !important; 
+}
+/* 新增：寬版模式下自動隱藏紅點，避免視覺重疊 */
+#sidebar.wide .scat-dot {
+  display: none !important;
+}
+    #sidebar.wide .scat-abbr{display:none;}
+    #sidebar.wide .scat-label{display:block;}
+.scat-dot {
+  position: absolute;
+  top: 8px;   /* 向上微調 */
+  left: 6px;  /* 向左微調，避開文字起點 */
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  display: none;
+  z-index: 5;
+  box-shadow: 0 0 0 2px var(--sidebar-bg);
+}
+
+.scat-dot.show {
+  display: block;
+}
+
+/* 底部按鈕：fixed，靠左對齊，由 JS 控制寬度和顯示 */
+#sideFoot {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  /* 寬度隨側邊欄變動，但內部元素靠左對齊 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start !important; 
+  gap: 12px;
+  padding: 10px 14px calc(10px + var(--sab)) !important;
+  background: var(--sidebar-bg);
+  border-top: 0.5px solid var(--sep);
+  z-index: 20;
+  transition: width 0.26s cubic-bezier(.32,.72,0,1);
+}
+
+.sbtn {
+  /* 移除任何可能導致置中的 margin */
+  margin-left: 0 !important;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #2C2C2E;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+}
+
+    .sbtn:active{opacity:0.65;}
+    .sbtn svg{width:20px;height:20px;color:#fff;display:block;stroke:currentColor;}
+
+    /* ══ 主區 ══ */
+    #main{
+      flex:1;display:flex;flex-direction:column;
+      background:var(--bg);overflow:hidden;
+      border-radius:16px 16px 0 0;min-width:0;
+    }
+    #mainHeader{
+      flex-shrink:0;background:var(--label);
+      border-radius:16px 16px 0 0;
+      padding:calc(var(--sat) + 10px) 16px 10px 16px;
+      display:flex;align-items:center;gap:10px;
+    }
+    #vTitle{
+      font-size:22px;font-weight:800;color:#fff;
+      flex:1;margin:0;letter-spacing:-0.3px;
+      min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    #arrivalBtn{
+      flex-shrink:0;
+      padding:6px 14px;
+      background:rgba(255,255,255,0.15);
+      border:none;border-radius:10px;
+      color:#fff;font-size:15px;font-weight:600;
+      font-family:inherit;cursor:pointer;
+      letter-spacing:0.3px;
+      -webkit-tap-highlight-color:transparent;
+      transition:background .15s;
+      white-space:nowrap;
+    }
+    #arrivalBtn:active{background:rgba(255,255,255,0.28);}
+    #arrivalBtn.recorded{background:var(--primary);}
+    /* ══ 搜尋欄（可展開） ══ */
+    .srch{
+      position:relative;display:flex;align-items:center;justify-content:flex-end;
+      flex-shrink:0;
+    }
+    /* 搜尋圖示按鈕：固定在最右側 */
+    #srchIcon{
+      width:36px;height:36px;border-radius:50%;
+      background:transparent;border:none;
+      color:#fff;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      transition:background .15s;flex-shrink:0;
+      position:relative;z-index:1;
+      -webkit-tap-highlight-color:transparent;
+    }
+    #srchIcon:active{background:rgba(255,255,255,.12);}
+    /* 搜尋輸入框容器：從右側往左展開 */
+    #srchWrap{
+      position:absolute;right:36px;
+      overflow:hidden;
+      width:0;
+      transition:width .28s cubic-bezier(.32,.72,0,1);
+      display:flex;align-items:center;
+    }
+    #srchWrap.open{ width:160px; }
+    .srch input{
+      width:100%;padding:8px 28px 8px 12px;
+      border-radius:9px;border:none;background:#2C2C2E;
+      color:#fff;font-size:15px;outline:none;font-family:inherit;
+      flex-shrink:0;
+    }
+    .srch input::placeholder{color:#636366;}
+    .srch-x{
+      position:absolute;right:4px;color:#636366;
+      display:none;cursor:pointer;padding:4px;
+      width:24px;height:24px;
+    }
+    /* 有文字時圖示閃爍提示 */
+    #srchIcon.has-query{
+      background:var(--primary);
+      animation:srchPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes srchPulse{
+      0%,100%{box-shadow:0 0 0 0 rgba(0,122,255,.7);}
+      50%{box-shadow:0 0 0 7px rgba(0,122,255,0);}
+    }
+
+    #netBanner{flex-shrink:0;display:none;padding:5px 12px;font-size:12px;font-weight:600;text-align:center;}
+    #netBanner.offline{display:block;background:var(--orange);color:#fff;}
+    #netBanner.pending{display:block;background:var(--orange);color:#fff;}
+    #netBanner.syncing{display:block;background:var(--primary);color:#fff;}
+
+    #listWrap{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 8px calc(var(--sab)+20px);-webkit-overflow-scrolling:touch;}
+    #listWrap::-webkit-scrollbar{display:none;}
+
+    /* 任務卡片 */
+    .card{background:var(--card);border-radius:11px;margin-bottom:7px;display:flex;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,0.06);user-select:none;-webkit-user-select:none;}
+    .card.overdue-card{border-left:3px solid var(--red);border-radius:0 11px 11px 0;}
+    .chk-area{padding:13px 9px 13px 13px;cursor:pointer;flex-shrink:0;}
+    .checkbox{width:24px;height:24px;border:2px solid #C7C7CC;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+    .checkbox.done{background:var(--primary);border-color:var(--primary);}
+    .checkbox.done::after{content:'✓';color:#fff;font-size:13px;font-weight:800;}
+    .info{flex:1;padding:12px 11px 12px 0;overflow:hidden;cursor:pointer;}
+    .task-title{
+      -webkit-text-size-adjust:none;text-size-adjust:none;
+      font-size:17px;font-weight:600;color:var(--label);
+      line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      margin-bottom:4px;display:block;width:100%;
+    }
+    .task-title.done{text-decoration:line-through;color:var(--gray);font-weight:400;}
+    .task-meta{display:flex;align-items:center;gap:6px;margin-top:2px;}
+    .meta-cat{font-size:11px;font-weight:700;color:#fff;background:var(--gray);padding:2px 7px;border-radius:5px;flex-shrink:0;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .meta-date{font-size:12px;color:var(--gray);flex-shrink:0;}
+    .meta-date.overdue{color:var(--red);font-weight:700;}
+    .pri-badge{margin-left:auto;flex-shrink:0;background:#EBEBEB;color:#636366;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700;opacity:0.85;}
+
+    .empty-state{text-align:center;color:var(--gray);padding:50px 20px;font-size:15px;line-height:2;}
+
+    /* ══ 快速新增 ══ */
+    #quickM{
+      display:none;position:fixed;
+      /* 位置由 JS 動態設定在 FAB 下方 */
+      z-index:200;
+      background:var(--card);
+      border-radius:14px;
+      padding:12px;
+      box-shadow:0 8px 32px rgba(0,0,0,.28);
+      width:260px;
+      animation:fadeScaleIn .18s cubic-bezier(.32,.72,0,1);
+    }
+    #quickM.open{display:block;}
+    @keyframes fadeScaleIn{
+      from{opacity:0;transform:scale(0.92) translateY(-8px);}
+      to{opacity:1;transform:scale(1) translateY(0);}
+    }
+    .quick-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+    .quick-row:last-child{margin-bottom:0;}
+    #quickInput{
+      flex:1;padding:10px 12px;border:none;border-radius:10px;
+      background:var(--bg);font-size:16px;font-family:inherit;
+      color:var(--label);outline:none;-webkit-appearance:none;
+      width:100%;
+    }
+    #quickInput::placeholder{color:#AEAEB2;}
+    #quickCat{
+      flex:1;padding:10px 10px;border:none;border-radius:10px;
+      background:var(--bg);font-size:14px;font-family:inherit;
+      color:var(--label);outline:none;-webkit-appearance:none;
+      cursor:pointer;
+    }
+    #quickSave{
+      padding:10px 16px;background:var(--primary);color:#fff;
+      border:none;border-radius:10px;font-size:14px;font-weight:700;
+      font-family:inherit;cursor:pointer;flex-shrink:0;
+      -webkit-tap-highlight-color:transparent;
+    }
+    #quickSave:active{opacity:.85;}
+    #quickOverlay{display:none;position:fixed;inset:0;z-index:199;}
+    #quickOverlay.open{display:block;}
+
+    /* ══ 快速選單 ══ */
+    #ctxOverlay{display:none;position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.35);}
+    #ctxOverlay.open{display:block;}
+    #ctxMenu{
+      display:none;position:fixed;z-index:500;
+      background:var(--card);border-radius:16px;
+      overflow:hidden;min-width:200px;
+      box-shadow:0 8px 32px rgba(0,0,0,.28);
+      transform:scale(0.92);opacity:0;
+      transition:transform .18s cubic-bezier(.32,.72,0,1),opacity .18s;
+    }
+    #ctxMenu.open{display:block;}
+    #ctxMenu.show{transform:scale(1);opacity:1;}
+    .ctx-item{
+      display:flex;align-items:center;gap:12px;
+      padding:14px 18px;font-size:15px;font-weight:500;
+      color:var(--label);border-bottom:.5px solid #E5E5EA;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .ctx-item:last-child{border-bottom:none;}
+    .ctx-item:active{background:var(--bg);}
+    /* 移動分類子選單 */
+    #moveOverlay{display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.35);}
+    #moveOverlay.open{display:block;}
+    #moveMenu{
+      display:none;position:fixed;z-index:501;
+      background:var(--card);border-radius:16px;
+      overflow:hidden;width:240px;max-height:60dvh;overflow-y:auto;
+      box-shadow:0 8px 32px rgba(0,0,0,.28);
+      left:50%;transform:translateX(-50%);top:50%;margin-top:-120px;
+    }
+    #moveMenu.open{display:block;}
+    .move-cat-item{
+      display:flex;align-items:center;gap:10px;
+      padding:14px 18px;font-size:15px;font-weight:500;
+      color:var(--label);border-bottom:.5px solid #E5E5EA;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .move-cat-item:last-child{border-bottom:none;}
+    .move-cat-item:active{background:var(--bg);}
+    .move-cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+    .empty-state .emo{display:flex;justify-content:center;margin-bottom:12px;}
+
+    /* ══ Modals（從底部滑上，iOS sheet 樣式）══ */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.48);
+  align-items: flex-end;
+  z-index: 100;
+}
+.modal.open {
+  display: flex;
+}
+.sheet {
+  background: var(--card);
+  width: 100%;
+  border-radius: 20px 20px 0 0;
+  padding-bottom: calc(var(--sab) + 6px);
+  display: flex;
+  flex-direction: column;
+  max-height: 88dvh;
+  animation: slideUp .3s cubic-bezier(.32,.72,0,1);
+  position: relative;
+  transition: transform .25s cubic-bezier(.32,.72,0,1);
+  will-change: transform;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+/* 拖桿：固定在頂部 */
+.sh-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #D1D1D6;
+  margin: 10px auto 6px;
+  flex-shrink: 0;
+  cursor: grab;
+}
+.sh-handle:active { cursor: grabbing; }
+    .sh-title{font-size:15px;font-weight:700;text-align:center;color:var(--label);padding:6px 16px 4px;flex-shrink:0;}
+    .sh-body{flex:1;overflow-y:auto;padding:2px 12px 10px;-webkit-overflow-scrolling:touch;transition:max-height .25s cubic-bezier(.32,.72,0,1);touch-action:pan-y;}
+    .sh-body::-webkit-scrollbar{display:none;}
+
+    /* 同步記錄固定高度 */
+    /* 3. 視窗高度固定為 520px */
+    #catM .sheet, #syncM .sheet { max-height: 72dvh; }
+    #syncM .sh-body{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+
+    .f{width:100%;padding:9px 11px;border:none;border-radius:9px;background:var(--bg);font-size:15px;font-family:inherit;color:var(--label);margin-bottom:6px;outline:none;display:block;-webkit-appearance:none;appearance:none;}
+    .f::placeholder{color:#AEAEB2;}
+    textarea.f{resize:none;height:68px;line-height:1.5;margin-top:6px;}
+    select.f{cursor:pointer;}
+    .frow{display:flex;gap:6px;}
+    .frow>div{flex:1;}
+    .btn-p{background:var(--primary);color:#fff;border:none;font-weight:700;padding:11px;border-radius:11px;width:100%;font-size:15px;cursor:pointer;margin-top:3px;font-family:inherit;}
+    .btn-p:active{opacity:.85;}
+    .btn-ghost{background:none;border:none;color:var(--red);font-weight:600;font-size:14px;padding:9px;width:100%;cursor:pointer;font-family:inherit;}
+
+    /* 分類管理 */
+    .cat-row{display:flex;align-items:center;padding:9px 2px;border-bottom:.5px solid #E5E5EA;gap:8px;user-select:none;}
+    .cat-row:last-child{border-bottom:none;}
+    .cat-name{flex:1;font-size:14px;font-weight:600;color:var(--label);}
+    .cat-acts{display:flex;gap:8px;flex-shrink:0;align-items:center;}
+    .cat-act{font-size:13px;font-weight:600;cursor:pointer;}
+    /* 分類顏色圓點 */
+    .cat-color-dot{
+      width:20px;height:20px;border-radius:50%;
+      flex-shrink:0;cursor:pointer;
+      border:2px solid transparent;
+      transition:transform .15s;
+    }
+    .cat-color-dot:active{transform:scale(.88);}
+    /* 顏色選擇器 */
+    .color-picker-wrap{
+      display:none;position:fixed;z-index:300;
+      background:var(--card);border-radius:14px;
+      padding:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);
+      flex-wrap:wrap;gap:8px;width:188px;
+    }
+    .color-picker-wrap.open{display:flex;}
+    .cp-swatch{
+      width:28px;height:28px;border-radius:50%;
+      cursor:pointer;border:2px solid transparent;
+      transition:transform .15s;flex-shrink:0;
+    }
+    .cp-swatch:active{transform:scale(.88);}
+    .cp-swatch.selected{border-color:#1C1C1E;box-shadow:0 0 0 2px #fff,0 0 0 4px #1C1C1E;}
+    /* 任務卡片左側顏色條 */
+    .card.cat-colored{border-left:3px solid var(--cat-color,var(--gray));border-radius:0 11px 11px 0;}
+    .card.overdue-card.cat-colored{border-left:3px solid var(--red);}
+    /* 上移/下移按鈕 */
+    .move-btn{
+      width:30px;height:30px;border:none;border-radius:8px;
+      background:#F2F2F7;color:var(--label);
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent;
+    }
+    .move-btn:active{background:#E5E5EA;}
+    .move-btn:disabled{opacity:0.25;pointer-events:none;}
+    /* 新增分類區塊 */
+    .cat-add-row{display:flex;gap:8px;align-items:center;margin-top:8px;padding-top:8px;border-top:.5px solid #E5E5EA;}
+    .cat-add-input{
+      flex:1;padding:10px 12px;border:none;border-radius:10px;
+      background:var(--bg);font-size:15px;font-family:inherit;
+      color:var(--label);outline:none;-webkit-appearance:none;
+    }
+    .cat-add-input::placeholder{color:#AEAEB2;}
+    .cat-add-btn{
+      padding:10px 16px;background:var(--primary);color:#fff;
+      border:none;border-radius:10px;font-size:15px;font-weight:600;
+      cursor:pointer;font-family:inherit;flex-shrink:0;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .cat-add-btn:active{opacity:.85;}
+
+
+    /* 同步記錄 */
+    .sync-badge{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:9px;margin-bottom:5px;font-size:12px;font-weight:600;flex-shrink:0;}
+    .sync-badge.online{background:#E8F8ED;color:#1A7A35;}
+    .sync-badge.offline{background:#FFF3E0;color:#B85C00;}
+    /* 修正：保留綠/橙色點 */
+    .sync-badge .ndot { 
+      display: inline-block; width: auto; height: auto; border-radius: 0; background: none !important; 
+      margin-right: 2px;
+     }
+    .sync-badge.online .ndot{background:var(--green);}
+    .sync-badge.offline .ndot{background:var(--orange);}
+    .qpill{font-size:11px;font-weight:600;text-align:center;padding:3px 10px;border-radius:7px;margin-bottom:5px;flex-shrink:0;}
+    .qpill.ok{background:#E8F8ED;color:#1A7A35;}
+    .qpill.pending{background:#FFF3E0;color:#B85C00;}
+    #syncLog{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);border-radius:9px;padding:6px;min-height:40px;margin-bottom:7px;}
+    #syncLog::-webkit-scrollbar{display:none;}
+    .log-entry{display:flex;align-items:baseline;gap:6px;padding:4px 0;border-bottom:.5px solid #E5E5EA;font-size:12px;line-height:1.4;}
+    .log-entry:last-child{border-bottom:none;}
+    .log-time{color:var(--gray);font-size:11px;white-space:nowrap;flex-shrink:0;}
+    .log-msg{flex:1;word-break:break-all;}
+    .log-msg.info{color:var(--primary);}
+    .log-msg.success{color:#1A7A35;}
+    .log-msg.error{color:var(--red);}
+    .log-msg.warn{color:var(--orange);}
+    .log-empty{text-align:center;color:var(--gray);padding:16px 0;font-size:12px;}
+    .btn-sync{background:var(--primary);color:#fff;border:none;font-weight:700;padding:11px;border-radius:11px;width:100%;font-size:15px;cursor:pointer;flex-shrink:0;font-family:inherit;}
+    .btn-sync:disabled{background:var(--gray);}
+    /* ══ 匯入功能 ══ */
+    .import-btn{
+      background:#2C2C2E;color:#fff;border:none;font-weight:700;
+      padding:11px;border-radius:11px;width:100%;font-size:15px;
+      cursor:pointer;flex-shrink:0;font-family:inherit;margin-top:6px;
+      display:flex;align-items:center;justify-content:center;gap:8px;
+    }
+    .import-btn:active{opacity:.8;}
+    #importFileInput{display:none;}
+    /* 觸控裝置（手機/平板）隱藏匯入按鈕 */
+    @media (hover: none) and (pointer: coarse) {
+      .import-btn { display: none !important; }
+      .import-result { display: none !important; }
+    }
+    .import-result{
+      font-size:12px;padding:8px 10px;border-radius:8px;margin-top:6px;
+      display:none;line-height:1.6;
+    }
+    .import-result.ok{background:#E8F8ED;color:#1A7A35;}
+    .import-result.err{background:#FFE5E5;color:#C0392B;}
+    /* 欄位對應視窗 */
+    #importMapModal{
+      display:none;position:fixed;inset:0;
+      background:rgba(0,0,0,.55);z-index:200;
+      align-items:center;justify-content:center;padding:20px;
+    }
+    #importMapModal.open{display:flex;}
+    .import-map-sheet{
+      background:var(--card);border-radius:16px;width:100%;max-width:420px;
+      padding:20px;display:flex;flex-direction:column;gap:10px;
+      max-height:90dvh;overflow-y:auto;
+    }
+    .import-map-title{font-size:16px;font-weight:700;color:var(--label);text-align:center;margin-bottom:4px;}
+    .import-map-sub{font-size:12px;color:var(--gray);text-align:center;margin-bottom:6px;}
+    .import-map-row{display:flex;align-items:center;gap:8px;}
+    .import-map-label{font-size:13px;font-weight:600;color:var(--label);width:72px;flex-shrink:0;}
+    .import-map-label span{font-size:10px;color:var(--red);}
+    .import-map-select{
+      flex:1;padding:8px 10px;border:none;border-radius:9px;
+      background:var(--bg);font-size:14px;font-family:inherit;
+      color:var(--label);outline:none;-webkit-appearance:none;cursor:pointer;
+    }
+    .import-map-btns{display:flex;gap:8px;margin-top:6px;}
+    .import-map-btns button{
+      flex:1;padding:11px;border:none;border-radius:11px;
+      font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;
+    }
+    .import-confirm-btn{background:var(--primary);color:#fff;}
+    .import-cancel-btn{background:#E5E5EA;color:var(--label);}
+
+    /* ══ 登入畫面 ══ */
+    #loginScreen {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--sidebar-bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 28px calc(32px + var(--sab));
+    }
+    #loginScreen.hidden { display: none; }
+    .login-logo { margin-bottom: 8px; }
+    .login-title {
+      font-size: 22px; font-weight: 800; color: #fff;
+      margin-bottom: 4px; letter-spacing: -0.3px;
+    }
+    .login-sub {
+      font-size: 13px; color: rgba(255,255,255,0.45);
+      margin-bottom: 36px;
+    }
+    .login-box {
+      width: 100%; max-width: 320px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .login-input {
+      width: 100%; padding: 15px 16px;
+      background: #2C2C2E; border: 1.5px solid transparent;
+      border-radius: 13px; color: #fff; font-size: 16px;
+      font-family: inherit; outline: none;
+      transition: border-color .18s;
+    }
+    .login-input:focus { border-color: var(--primary); }
+    .login-input::placeholder { color: #636366; }
+    .login-input.shake {
+      animation: shake .35s cubic-bezier(.36,.07,.19,.97);
+      border-color: var(--red);
+    }
+    @keyframes shake {
+      10%,90%{transform:translateX(-3px)}
+      20%,80%{transform:translateX(4px)}
+      30%,50%,70%{transform:translateX(-5px)}
+      40%,60%{transform:translateX(5px)}
+    }
+    .login-btn {
+      width: 100%; padding: 15px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 13px;
+      font-size: 16px; font-weight: 700;
+      font-family: inherit; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .login-btn:active { opacity: .82; }
+    .login-btn:disabled { background: var(--gray); cursor: default; }
+    .login-err { font-size: 13px; color: var(--red); font-weight: 600; text-align: center; min-height: 18px; }
+    .login-remember {
+      display: flex; align-items: center; gap: 8px;
+      color: rgba(255,255,255,0.55); font-size: 13px; cursor: pointer;
+    }
+    .login-remember input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+  </style>
+</head>
+<body>
+
+<!-- 登入畫面 -->
+<div id="loginScreen">
+  <div class="login-logo">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="64" height="64">
+    <rect x="5" y="3" width="14" height="18" rx="2"/>
+    <path d="M9 3v2h6V3"/>
+    <line x1="9" y1="9" x2="15" y2="9"/>
+    <line x1="9" y1="13" x2="15" y2="13"/>
+    <line x1="9" y1="17" x2="12" y2="17"/>
+    <polyline points="7 9 8 10 9 8" stroke-width="1.8"/>
+  </svg>
+</div>
+  <div class="login-title">宜修的待辦清單</div>
+  <div class="login-sub">請輸入密碼以繼續</div>
+  <div class="login-box">
+    <input type="password" id="loginPwd" class="login-input" placeholder="密碼"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <label class="login-remember">
+      <input type="checkbox" id="loginRemember" checked>
+      記住登入狀態（30天）
+    </label>
+    <div class="login-err" id="loginErr"></div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">登入</button>
+  </div>
+</div>
+
+<button id="fab" onclick="fabClick()" ontouchstart="fabTouchStart()" ontouchend="fabTouchEnd()" ontouchmove="fabTouchMove()" aria-label="新增">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="26" height="26">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+</button>
+
+<div id="sidebar">
+  <div id="sideGap"></div>
+  <div id="sideList"></div>
+</div>
+
+<!-- 底部按鈕獨立於 sidebar，由 JS 控制 -->
+<div id="sideFoot">
+  <button class="sbtn" onclick="openCatM()" aria-label="分類">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+    <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/>
+  </svg>
+</button>
+  <button class="sbtn" onclick="openSyncLog()" aria-label="同步">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22">
+    <path d="M21 2v6h-6"/>
+    <path d="M3 12a9 9 0 0115-6.7L21 8"/>
+    <path d="M3 22v-6h6"/>
+    <path d="M21 12a9 9 0 01-15 6.7L3 16"/>
+  </svg>
+</button>
+</div>
+
+<div id="main">
+  <div id="mainHeader">
+    <h1 id="vTitle">今天</h1>
+    <button id="arrivalBtn" onclick="toggleArrival()">到場時間</button>
+    <div class="srch">
+      <div id="srchWrap">
+        <input type="search" id="searchInput" placeholder="搜尋…"
+          oninput="handleSearch()" autocomplete="off" autocorrect="off" spellcheck="false">
+        <span id="srchX" class="srch-x" onclick="clearSearch()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="13" height="13">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+</span>
+      </div>
+      <button id="srchIcon" onclick="toggleSearch()" aria-label="搜尋">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="19" height="19">
+    <circle cx="10.5" cy="10.5" r="6.5"/>
+    <line x1="15.5" y1="15.5" x2="21" y2="21"/>
+  </svg>
+</button>
+    </div>
+  </div>
+  <div id="netBanner"></div>
+  <div id="listWrap"><div id="list">載入中…</div></div>
+</div>
+
+<!-- 快速新增 -->
+<div id="quickOverlay" onclick="closeQuick()"></div>
+<div id="quickM" onclick="event.stopPropagation()">
+  <div class="quick-row">
+    <input type="text" id="quickInput" placeholder="任務名稱…"
+      onkeydown="if(event.key==='Enter'&&!event.isComposing)saveQuick()">
+  </div>
+  <div class="quick-row">
+    <select id="quickCat"></select>
+    <button id="quickSave" onclick="saveQuick()">新增</button>
+  </div>
+</div>
+
+<!-- 任務編輯 -->
+<div id="taskM" class="modal" onclick="if(event.target===this)closeM('taskM')">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <div class="sh-handle"></div>
+    <div class="sh-title" id="taskSheetTitle">新增任務</div>
+    <div class="sh-body">
+      <input type="hidden" id="editId">
+      <input type="text" id="taskInput" class="f" placeholder="任務名稱">
+      <div class="frow">
+        <div style="flex:2"><input type="date" id="dateInput" class="f" style="margin-bottom:0"></div>
+        <div style="flex:2"><select id="catSelect" class="f" style="margin-bottom:0"></select></div>
+        <div style="flex:1"><input type="number" id="priInput" class="f" placeholder="P#" min="1" max="99" style="margin-bottom:0;text-align:center"></div>
+      </div>
+      <textarea id="noteInput" class="f" placeholder="備註（選填）" style="margin-bottom:4px"></textarea>
+      <button class="btn-p" onclick="save()">儲存</button>
+      <button class="btn-ghost" id="delBtn" onclick="delTask()">刪除此任務</button>
+    </div>
+  </div>
+</div>
+
+<!-- 分類管理 -->
+<div id="catM" class="modal" onclick="if(event.target===this)closeM('catM')">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <div class="sh-handle"></div>
+    <div class="sh-title">分類管理</div>
+    <div class="sh-body">
+      <div id="catList"></div>
+      <div class="cat-add-row">
+        <input type="text" id="newC" class="cat-add-input" placeholder="新增分類…"
+          onkeydown="if(event.key==='Enter'&&!event.isComposing)addC()">
+        <button class="cat-add-btn" onclick="addC()">新增</button>
+      </div>
+      <button class="btn-p" style="margin-top:8px;background:#636366;" onclick="closeM('catM')">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- 同步記錄 -->
+<div id="syncM" class="modal" onclick="if(event.target===this)closeM('syncM')">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <div class="sh-handle"></div>
+    <div class="sh-title">同步記錄</div>
+    <div class="sh-body">
+      <div class="sync-badge" id="syncNetBadge">
+        <span class="ndot" id="syncStatusTag"></span> <!-- 這裡會插入 [連線] 或 [離線] -->
+        <span id="syncNetTxt"></span>
+      </div>
+      <div class="qpill" id="queuePill"></div>
+      <div id="syncLog"><p class="log-empty">尚無同步記錄</p></div>
+      <button class="btn-sync" id="syncNowBtn" onclick="doSyncFromModal()">立即同步</button>
+      <button class="import-btn" onclick="document.getElementById('importFileInput').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        匯入 Excel / CSV
+      </button>
+      <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" onchange="handleImport(event)">
+      <div class="import-result" id="importResult"></div>
+      <button class="btn-sync" style="background:#3A3A3C;margin-top:6px;" onclick="if(confirm('確定登出？'))doLogout()">登出</button>
+    </div>
+  </div>
+</div>
+
+<!-- 匯入欄位對應視窗 -->
+<div id="importMapModal">
+  <div class="import-map-sheet">
+    <div class="import-map-title">欄位對應設定</div>
+    <div class="import-map-sub" id="importMapSub">請選擇每個欄位對應 Excel 的哪一欄</div>
+    <div class="import-map-row">
+      <div class="import-map-label">任務名稱<span>*</span></div>
+      <select class="import-map-select" id="mapTask"></select>
+    </div>
+    <div class="import-map-row">
+      <div class="import-map-label">分類</div>
+      <select class="import-map-select" id="mapCategory"></select>
+    </div>
+    <div class="import-map-row">
+      <div class="import-map-label">截止日期</div>
+      <select class="import-map-select" id="mapDueDate"></select>
+    </div>
+    <div class="import-map-row">
+      <div class="import-map-label">優先級</div>
+      <select class="import-map-select" id="mapPriority"></select>
+    </div>
+    <div class="import-map-row">
+      <div class="import-map-label">備註</div>
+      <select class="import-map-select" id="mapNote"></select>
+    </div>
+    <div class="import-map-btns">
+      <button class="import-cancel-btn" onclick="closeImportMap()">取消</button>
+      <button class="import-confirm-btn" onclick="confirmImport()">開始匯入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 分類顏色選擇器 -->
+<div id="colorPicker" class="color-picker-wrap" onclick="event.stopPropagation()"></div>
+
+<!-- 快速選單 -->
+<div id="ctxOverlay"></div>
+<div id="ctxMenu" onclick="event.stopPropagation()">
+  <div class="ctx-item" onclick="ctxSetToday()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    設為今天
+  </div>
+  <div class="ctx-item" onclick="ctxSetTomorrow()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="12 15 15 18 12 21"/></svg>
+    設為明天
+  </div>
+  <div class="ctx-item" onclick="ctxOpenMove()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
+    移動分類
+  </div>
+  <div class="ctx-item" onclick="ctxSetDone()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg>
+    標為已完成
+  </div>
+</div>
+<div id="moveOverlay"></div>
+<div id="moveMenu" onclick="event.stopPropagation()"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// Supabase 設定（填入你自己的值）
+// ══════════════════════════════════════════════════════
+const SUPA_URL = '你的Supabase專案網址';   // e.g. https://abcxyz.supabase.co
+const SUPA_KEY = '你的anon_public_key';    // Project Settings > API > anon public
+
+// ── Supabase REST 工具 ──────────────────────────────
+const _sh = () => ({
+  'Content-Type': 'application/json',
+  'apikey': SUPA_KEY,
+  'Authorization': `Bearer ${SUPA_KEY}`,
+  'Accept': 'application/json',
+});
+
+async function _sGet(table, qs='') {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${qs}`, { headers: _sh() });
+  if (!r.ok) throw new Error(`GET ${table} ${r.status}`);
+  return r.json();
+}
+async function _sPost(table, body, prefer='return=minimal') {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+    method:'POST', headers:{..._sh(),'Prefer':prefer}, body:JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(`POST ${table} ${r.status}: ${await r.text()}`);
+}
+async function _sPatch(table, filter, body) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${filter}`, {
+    method:'PATCH', headers:{..._sh(),'Prefer':'return=minimal'}, body:JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(`PATCH ${table} ${r.status}: ${await r.text()}`);
+}
+async function _sDel(table, filter) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${filter}`, {
+    method:'DELETE', headers: _sh()
+  });
+  if (!r.ok) throw new Error(`DELETE ${table} ${r.status}`);
+}
+
+// ── 資料操作（對應原 GAS action）────────────────────
+async function _getTasks() {
+  const rows = await _sGet('tasks', 'select=*&order=m_time.desc');
+  return rows.map(r => ({
+    ID: r.id, Task: r.task, Category: r.category||'',
+    DueDate: r.due_date||'', Status: r.status,
+    Priority: r.priority, Note: r.note||'', mTime: r.m_time,
+  }));
+}
+async function _getCategories() {
+  const rows = await _sGet('categories', 'select=*&order=sort_order.asc');
+  return rows.map(r => ({
+    name: r.name, sortOrder: r.sort_order, color: r.color||'',
+    rowId: r.id, updatedAt: r.updated_at,
+  }));
+}
+async function _addTask(id, d) {
+  await _sPost('tasks', {
+    id, task: d.task, category: d.category||'',
+    due_date: d.dueDate||null, status:'Pending',
+    priority: d.priority||99, note: d.note||'',
+    m_time: d.mTime||Date.now(),
+  });
+}
+async function _updateTask(id, d) {
+  await _sPatch('tasks', `id=eq.${id}`, {
+    task: d.task, category: d.category||'',
+    due_date: d.dueDate||null, priority: d.priority||99,
+    note: d.note||'', m_time: d.mTime||Date.now(),
+  });
+}
+async function _toggleTask(id) {
+  const rows = await _sGet('tasks', `id=eq.${id}&select=status`);
+  if (!rows.length) throw new Error('找不到任務 '+id);
+  const next = rows[0].status === 'Done' ? 'Pending' : 'Done';
+  await _sPatch('tasks', `id=eq.${id}`, { status: next, m_time: Date.now() });
+}
+async function _deleteTask(id) {
+  await _sDel('tasks', `id=eq.${id}`);
+}
+async function _addCategory(name, sortOrder, color) {
+  const rows = await _sGet('categories', 'select=sort_order&order=sort_order.desc&limit=1');
+  const maxSo = rows.length ? (rows[0].sort_order||0) : 0;
+  await _sPost('categories', {
+    name, sort_order: sortOrder !== undefined ? Number(sortOrder) : maxSo+10,
+    color: color||'', updated_at: Date.now(),
+  });
+}
+async function _deleteCategory(name) {
+  await _sDel('categories', `name=eq.${encodeURIComponent(name)}`);
+}
+async function _renameCategory(oldName, newName) {
+  await _sPatch('categories', `name=eq.${encodeURIComponent(oldName)}`,
+    { name: newName, updated_at: Date.now() });
+  await _sPatch('tasks', `category=eq.${encodeURIComponent(oldName)}`,
+    { category: newName, m_time: Date.now() });
+}
+async function _reorderCategories(order) {
+  await Promise.all(order.map((item, idx) => {
+    const name      = typeof item === 'string' ? item : item.name;
+    const sortOrder = item.sortOrder !== undefined ? Number(item.sortOrder) : (idx+1)*10;
+    const color     = item.color !== undefined ? item.color : '';
+    return _sPatch('categories', `name=eq.${encodeURIComponent(name)}`,
+      { sort_order: sortOrder, color, updated_at: Date.now() });
+  }));
+}
+
+async function _dispatchOp(action, payload) {
+  const { id, data, name, old: oldName, order, color } = payload;
+  if      (action === 'addTask')           return _addTask(id, data);
+  else if (action === 'updateTask')        return _updateTask(id, data);
+  else if (action === 'toggleTask')        return _toggleTask(id);
+  else if (action === 'deleteTask')        return _deleteTask(id);
+  else if (action === 'addCategory')       return _addCategory(name, undefined, color);
+  else if (action === 'deleteCategory')    return _deleteCategory(name);
+  else if (action === 'renameCategory')    return _renameCategory(oldName, name);
+  else if (action === 'reorderCategories') return _reorderCategories(order);
+  else throw new Error('未知 action: ' + action);
+}
+
+// ── 登入驗證 ────────────────────────────────────────────────────
+// 【設定密碼】修改下方 APP_TOKEN 的值，這是你的登入密碼
+// 改完後重新部署頁面即可，舊的 localStorage token 會自動失效
+const APP_TOKEN = "你自己的密碼";
+
+// token 存活期（毫秒）：預設 30 天
+const TOKEN_TTL = 30 * 24 * 60 * 60 * 1000;
+
+function checkLogin() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('authToken') || 'null');
+    if (!stored) return false;
+    if (Date.now() > stored.exp) { localStorage.removeItem('authToken'); return false; }
+    return stored.token === APP_TOKEN;
+  } catch { return false; }
+}
+
+function doLogin() {
+  const pwd    = document.getElementById('loginPwd').value;
+  const errEl  = document.getElementById('loginErr');
+  const remember = document.getElementById('loginRemember').checked;
+
+  if (!pwd) { shakeInput(); return; }
+  if (pwd !== APP_TOKEN) {
+    errEl.textContent = '密碼錯誤，請重試';
+    shakeInput();
+    return;
+  }
+
+  // 驗證成功
+  const ttl = remember ? TOKEN_TTL : (8 * 60 * 60 * 1000); // 不記住：8小時
+  localStorage.setItem('authToken', JSON.stringify({ token: APP_TOKEN, exp: Date.now() + ttl }));
+  document.getElementById('loginScreen').classList.add('hidden');
+  errEl.textContent = '';
+  init();
+}
+
+function doLogout() {
+  localStorage.removeItem('authToken');
+  location.reload();
+}
+
+function shakeInput() {
+  const el = document.getElementById('loginPwd');
+  el.classList.remove('shake');
+  void el.offsetWidth; // reflow 讓動畫重播
+  el.classList.add('shake');
+  el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+}
+
+let allT = [], allC = [], currentF = '今天';
+let syncLogs = [], pendingQueue = [];
+let isSyncRunning = false, sideState = 1;
+let catOrder = [], lastUsedCat = '';
+
+const fmtD = s => s ? String(s).split('T')[0].replace(/\//g, '-') : "";
+const getToday = () => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0'); };
+const fmtTime = () => new Date().toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+const isOnline = () => navigator.onLine;
+
+const saveLocal = () => {
+  localStorage.setItem('tasks', JSON.stringify(allT));
+  localStorage.setItem('cats', JSON.stringify(allC));
+  localStorage.setItem('catOrder', JSON.stringify(catOrder));
+  if (lastUsedCat) localStorage.setItem('lastUsedCat', lastUsedCat);
+  localStorage.setItem('pendingQueue', JSON.stringify(pendingQueue));
+};
+const loadLocal = () => {
+  try { allT = JSON.parse(localStorage.getItem('tasks')) || []; } catch(e) { allT = []; }
+  loadCatColors();
+  try { const raw = JSON.parse(localStorage.getItem('cats')) || []; allC = raw.map(c => typeof c === 'string' ? c : c.name); } catch(e) { allC = []; }
+  try { catOrder = JSON.parse(localStorage.getItem('catOrder')) || []; } catch(e) { catOrder = []; }
+  lastUsedCat = localStorage.getItem('lastUsedCat') || '';
+  try { pendingQueue = JSON.parse(localStorage.getItem('pendingQueue')) || []; } catch(e) { pendingQueue = []; }
+};
+
+// ── 分類顏色 ─────────────────────────────────────────────────
+const CAT_COLORS = [
+  '#FF3B30','#FF6B35','#FF9500','#FFCC00',
+  '#34C759','#00C7BE','#007AFF','#5856D6',
+  '#AF52DE','#FF2D55','#8E8E93','#636366',
+];
+let catColors = {}; // { 分類名稱: 顏色碼 }
+
+const saveCatColors = () => localStorage.setItem('catColors', JSON.stringify(catColors));
+const loadCatColors = () => {
+  try { catColors = JSON.parse(localStorage.getItem('catColors')) || {}; }
+  catch { catColors = {}; }
+};
+
+function getCatColor(name) {
+  return catColors[name] || '#8E8E93';
+}
+
+// 開啟顏色選擇器
+function openColorPicker(catName, anchorEl) {
+  const picker = document.getElementById('colorPicker');
+  const current = getCatColor(catName);
+
+  picker.innerHTML = CAT_COLORS.map(c =>
+    `<div class="cp-swatch ${c===current?'selected':''}"
+      style="background:${c}"
+      onclick="pickColor('${catName}','${c}')"></div>`
+  ).join('') +
+  `<div class="cp-swatch" style="background:#fff;border:1.5px solid #E5E5EA;"
+    title="移除顏色" onclick="pickColor('${catName}','')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#C7C7CC" stroke-width="2.5" stroke-linecap="round" width="24" height="24">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  </div>`;
+
+  // 定位在錨點旁邊
+  const rect = anchorEl.getBoundingClientRect();
+  picker.style.top  = (rect.bottom + 6) + 'px';
+  picker.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+  picker.classList.add('open');
+
+  // 點外面關閉
+  setTimeout(() => {
+    const close = (e) => {
+      if (!picker.contains(e.target)) {
+        picker.classList.remove('open');
+        document.removeEventListener('touchstart', close);
+        document.removeEventListener('click', close);
+      }
+    };
+    document.addEventListener('click', close, {once:false});
+    document.addEventListener('touchstart', close, {once:false, passive:true});
+  }, 50);
+}
+
+function pickColor(catName, color) {
+  const picker = document.getElementById('colorPicker');
+  picker.classList.remove('open');
+  if (color) catColors[catName] = color;
+  else delete catColors[catName];
+  saveCatColors();
+  renderCatList();
+  renderSidebar();
+  render();
+  // 同步顏色到 GAS
+  syncCatOrder();
+}
+
+function applyCatOrder() {
+  const inOrder = catOrder.filter(n => allC.includes(n));
+  const notInOrder = allC.filter(n => !catOrder.includes(n));
+  allC = [...inOrder, ...notInOrder];
+  catOrder = [...allC];
+}
+
+// ── 鍵盤閃避：縮小 sh-body，sheet 位置完全不動 ─────────────
+// 鍵盤出現時量出鍵盤高度，縮小 sh-body 的 max-height
+// sheet 停在螢幕底部，sh-body 可以捲動看到所有欄位
+
+document.addEventListener('focusin', e => {
+  const tag = e.target.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+  const modal = e.target.closest('.modal');
+  if (!modal) { setTimeout(() => window.scrollTo(0,0), 80); return; }
+  const body = modal.querySelector('.sh-body');
+  if (!body) return;
+  // 等鍵盤完全展開後計算（PWA + Safari 雙模式）
+  setTimeout(() => {
+    let kbH = 0;
+    if (window.visualViewport) {
+      const vv = window.visualViewport;
+      // visualViewport.height 在 PWA 鍵盤出現時通常會縮小
+      kbH = window.innerHeight - vv.height;
+    }
+    if (kbH > 80) {
+      // 取得 sh-body 底部距螢幕底部的距離，加上鍵盤高度就是需要縮小的量
+      const bodyRect = body.getBoundingClientRect();
+      const bodyBottom = window.innerHeight - bodyRect.bottom;
+      const overlapH = kbH - bodyBottom; // 鍵盤實際遮住 body 的高度
+      if (overlapH > 20) {
+        const newH = Math.max(100, bodyRect.height - overlapH - 8);
+        body.style.maxHeight = newH + 'px';
+      }
+    }
+  }, 400);
+});
+
+document.addEventListener('focusout', e => {
+  const modal = e.target.closest('.modal');
+  if (!modal) { setTimeout(() => window.scrollTo(0,0), 80); return; }
+  setTimeout(() => {
+    if (!modal.contains(document.activeElement)) {
+      const body = modal.querySelector('.sh-body');
+      if (body) body.style.maxHeight = '';
+    }
+  }, 150);
+});
+
+let _txS = 0, _tyS = 0;
+document.addEventListener('touchstart', e => { _txS = e.touches[0].clientX; _tyS = e.touches[0].clientY; }, {passive:true});
+document.addEventListener('touchend', e => {
+  if (document.querySelector('.modal.open')) return;
+  if (document.getElementById('ctxMenu').classList.contains('open')) return;
+  if (document.getElementById('moveMenu').classList.contains('open')) return;
+  const dx = e.changedTouches[0].clientX - _txS;
+  const dy = e.changedTouches[0].clientY - _tyS;
+  if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+  if (dx > 0 && sideState < 2) sideState++;
+  else if (dx < 0 && sideState > 0) sideState--;
+  applySide();
+}, {passive:true});
+
+function applySide() {
+  const sb  = document.getElementById('sidebar');
+  const sf  = document.getElementById('sideFoot');
+  const fab = document.getElementById('fab');
+  const widths = [0, 88, 164];
+  const w = widths[sideState];
+
+  sb.style.width = w + 'px';
+  sf.style.width = w + 'px';
+  sb.classList.toggle('wide', sideState === 2);
+
+  if (sideState === 0) {
+    sf.style.display = 'none';
+    fab.style.opacity = '0';
+    fab.style.pointerEvents = 'none';
+  } else {
+    sf.style.display = 'flex';
+    fab.style.opacity = '1';
+    fab.style.pointerEvents = '';
+    if (sideState === 1) {
+      fab.style.left = ((w - 46) / 2) + 'px'; // 窄版置中
+    } else {
+      fab.style.left = '14px'; // 寬版靠左對齊，與文字起點一致
+    }
+  }
+  
+}
+
+function updateBanner() {
+  const b = document.getElementById('netBanner');
+  if (!isOnline()) { b.className = 'offline'; b.textContent = '離線 — 連網後自動同步'; }
+  else if (pendingQueue.length > 0) { b.className = 'pending'; b.textContent = `${pendingQueue.length} 筆操作待同步`; }
+  else { b.className = ''; b.textContent = ''; }
+}
+
+function pushLog(msg, type='info') {
+  syncLogs.unshift({time: fmtTime(), msg, type});
+  if (syncLogs.length > 300) syncLogs = syncLogs.slice(0, 300);
+  renderSyncLog();
+}
+function renderSyncLog() {
+  const el = document.getElementById('syncLog'); if (!el) return;
+  if (!syncLogs.length) { el.innerHTML = '<p class="log-empty">尚無同步記錄</p>'; return; }
+  el.innerHTML = syncLogs.map(l => `<div class="log-entry"><span class="log-time">${l.time}</span><span class="log-msg ${l.type}">${l.msg}</span></div>`).join('');
+}
+function updateSyncMeta() {
+  const badge = document.getElementById('syncNetBadge');
+  const pill  = document.getElementById('queuePill');
+  const tag = document.getElementById('syncStatusTag'); // 取得純文字標籤元素
+  
+  if (!badge) return;
+  if (isOnline()) { 
+    badge.className = 'sync-badge online'; 
+    if(tag) tag.textContent = '[連線]'; 
+    document.getElementById('syncNetTxt').textContent = '網路連線正常'; 
+  } else { 
+    badge.className = 'sync-badge offline'; 
+    if(tag) tag.textContent = '[離線]';
+    document.getElementById('syncNetTxt').textContent = '目前離線'; 
+  }
+  
+  if (pendingQueue.length > 0) { 
+    pill.className = 'qpill pending'; pill.textContent = `佇列 ${pendingQueue.length} 筆未同步`; 
+  } else { 
+    pill.className = 'qpill ok'; pill.textContent = '全部已同步 ✓'; 
+  }
+}
+function openSyncLog() { updateSyncMeta(); renderSyncLog(); openModal('syncM'); }
+
+function enqueue(action, payload, label) {
+  if (action === 'updateTask' || action === 'toggleTask') {
+    const idx = pendingQueue.findIndex(q => q.action === action && q.payload.id === payload.id);
+    if (action === 'toggleTask' && idx > -1) { pendingQueue.splice(idx,1); pushLog(`合併抵消：${label}`,'warn'); saveLocal(); updateBanner(); return; }
+    if (action === 'updateTask' && idx > -1) { pendingQueue[idx] = {action,payload,label,addedAt:Date.now()}; pushLog(`覆蓋佇列：${label}`,'warn'); saveLocal(); updateBanner(); return; }
+  }
+  pendingQueue.push({action, payload, label, addedAt: Date.now()});
+  pushLog(`佇列：${label}`, 'warn'); saveLocal(); updateBanner();
+}
+async function flushQueue() {
+  if (!pendingQueue.length) return true;
+  if (!isOnline()) { pushLog('離線，佇列等待','warn'); return false; }
+  pushLog(`重送 ${pendingQueue.length} 筆…`, 'info');
+  const failed = [];
+  for (const item of pendingQueue) {
+    try {
+      await _dispatchOp(item.action, item.payload);
+      pushLog(`✓ ${item.label}`, 'success');
+    } catch(e) { pushLog(`✗ ${item.label}: ${e.message||'錯誤'}`, 'error'); failed.push(item); }
+  }
+  pendingQueue = failed; saveLocal(); updateBanner(); updateSyncMeta();
+  if (failed.length) { pushLog(`${failed.length} 筆未成功`,'warn'); return false; }
+  return true;
+}
+async function pullFromCloud(reason, attempt=1) {
+  if (!isOnline()) { pushLog('離線略過拉取','warn'); return; }
+  if (attempt === 1) pushLog(`拉取雲端… (${reason})`, 'info');
+  else pushLog(`重試第 ${attempt} 次…`, 'info');
+  try {
+    const [resT, resC] = await Promise.all([_getTasks(), _getCategories()]);
+    allT = resT;
+    const filtered = resC.filter(c => c && c.name && c.name !== 'Category Name');
+    filtered.sort((a, b) => (a.sortOrder||0) - (b.sortOrder||0));
+    allC = filtered.map(c => c.name);
+    catOrder = [...allC];
+    filtered.forEach(c => {
+      if (c.color) catColors[c.name] = c.color;
+      else delete catColors[c.name];
+    });
+    saveCatColors(); saveLocal();
+    pushLog(`完成：${allT.length} 任務 / ${allC.length} 分類`, 'success');
+    render(); renderSidebar();
+  } catch(e) {
+    if (attempt < 3 && isOnline()) {
+      pushLog(`拉取失敗，${attempt} 秒後重試…`, 'warn');
+      await new Promise(r => setTimeout(r, attempt * 1000));
+      return pullFromCloud(reason, attempt + 1);
+    }
+    pushLog(`拉取失敗：${e.message||'錯誤'}`, 'error');
+  }
+}
+async function fullSync(reason) {
+  if (isSyncRunning) return;
+  isSyncRunning = true; updateBanner();
+  if (isOnline()) { const b = document.getElementById('netBanner'); b.className = 'syncing'; b.textContent = '同步中…'; }
+  try { if (await flushQueue()) await pullFromCloud(reason); }
+  finally { isSyncRunning = false; updateBanner(); updateSyncMeta(); }
+}
+async function pushOp(action, payload, label) {
+  if (!isOnline()) { enqueue(action, payload, label); return; }
+  pushLog(`推送：${label}`, 'info');
+  try {
+    await _dispatchOp(action, payload);
+    pushLog(`✓ ${label}`, 'success');
+    if (pendingQueue.length === 0) await pullFromCloud('驗證');
+  } catch(e) { pushLog(`✗ ${label}: ${e.message||'錯誤'}`, 'error'); enqueue(action, payload, label); }
+  updateBanner(); updateSyncMeta();
+}
+async function doSyncFromModal() {
+  const btn = document.getElementById('syncNowBtn');
+  btn.textContent = '同步中…'; btn.disabled = true;
+  await fullSync('手動');
+  btn.textContent = '立即同步'; btn.disabled = false;
+}
+window.addEventListener('online',  () => { pushLog('網路恢復，重送佇列…','info'); fullSync('網路恢復'); });
+window.addEventListener('offline', () => { pushLog('網路中斷','warn'); updateBanner(); updateSyncMeta(); });
+
+// ── Modal 開關（含鍵盤閃避 + 拖桿關閉 + body scroll 鎖定）────
+
+let _kbCleanup = null; // 鍵盤監聽清理函式
+
+function openModal(id) {
+  const m = document.getElementById(id);
+  m.style.display = 'flex';
+  requestAnimationFrame(() => m.classList.add('open'));
+  // 啟動鍵盤閃避
+  _startKeyboardAvoid(m);
+  // 啟動拖桿關閉
+  _startHandleDrag(m, id);
+}
+
+function closeModal(id) {
+  const m = document.getElementById(id);
+  m.classList.remove('open');
+  // 清理鍵盤監聽
+  if (_kbCleanup) { _kbCleanup(); _kbCleanup = null; }
+  // 重置樣式
+  const body = m.querySelector('.sh-body');
+  if (body) body.style.maxHeight = '';
+  const sheet = m.querySelector('.sheet');
+  if (sheet) sheet.style.transform = '';
+  setTimeout(() => { m.style.display = 'none'; }, 280);
+}
+
+function closeM(id) { if (id) closeModal(id); else { closeModal('taskM'); closeModal('catM'); } }
+
+// _startKeyboardAvoid：鍵盤閃避由全域 focusin/focusout 處理
+function _startKeyboardAvoid(modal) {
+  _kbCleanup = () => {
+    const body = modal.querySelector('.sh-body');
+    if (body) body.style.maxHeight = '';
+  };
+}
+
+// 拖桿關閉：手指向下拖超過 80px 就關閉
+function _startHandleDrag(modal, id) {
+  const handle = modal.querySelector('.sh-handle');
+  const sheet  = modal.querySelector('.sheet');
+  if (!handle || !sheet) return;
+
+  let startY = 0, isDragging = false;
+
+  function onTouchStart(e) {
+    startY = e.touches[0].clientY;
+    isDragging = true;
+    sheet.style.transition = 'none';
+    modal.style.transition = 'none';
+  }
+  function onTouchMove(e) {
+    if (!isDragging) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy < 0) return;
+    sheet.style.transform = `translateY(${dy}px)`;
+  }
+  function onTouchEnd(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    sheet.style.transition = '';
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy > 80) {
+      closeModal(id);
+    } else {
+      sheet.style.transform = '';
+      modal.style.transition = '';
+    }
+  }
+
+  handle.addEventListener('touchstart', onTouchStart, {passive:true});
+  handle.addEventListener('touchmove',  onTouchMove,  {passive:true});
+  handle.addEventListener('touchend',   onTouchEnd,   {passive:true});
+}
+
+
+function renderSidebar() {
+  const sl = document.getElementById('sideList'); const today = getToday();
+  const display = ['今天', '全部', '已完成', ...allC];
+  // SVG 圖示定義
+  const sysIcons = {
+    '今天': { cls:'today', svg:`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><text x="12" y="19" text-anchor="middle" font-size="7" fill="#fff" stroke="none" font-weight="800" font-family="-apple-system,sans-serif">${new Date().getDate()}</text></svg>` },
+    '全部': { cls:'all',   svg:`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.5" fill="#fff" stroke="none"/><circle cx="3.5" cy="12" r="1.5" fill="#fff" stroke="none"/><circle cx="3.5" cy="18" r="1.5" fill="#fff" stroke="none"/></svg>` },
+    '已完成': { cls:'done', svg:`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>` },
+  };
+
+  sl.innerHTML = display.map(c => {
+    let ts = allT.filter(t => {
+      const d = fmtD(t.DueDate);
+      if (c === '今天') return t.Status !== 'Done' && d && d <= today;
+      if (c === '全部') return t.Status !== 'Done';
+      if (c === '已完成') return t.Status === 'Done';
+      return String(t.Category) === c && t.Status !== 'Done';
+    });
+    const ov = ts.filter(t => fmtD(t.DueDate) && fmtD(t.DueDate) < today && t.Status !== 'Done').length;
+    const isSys = !!sysIcons[c];
+    const abbr  = c.slice(0, 3);
+
+    if (isSys) {
+      const { cls, svg } = sysIcons[c];
+      return `<div class="scat scat-sys ${currentF===c?'active':''}" onclick="setF('${c}')">
+        <span class="scat-dot ${ov>0?'show':''}"></span>
+        <span class="scat-icon ${cls}">${svg}</span>
+        <span class="scat-label">${c}</span>
+        <span class="scat-count">${ov>0?ov+'/':''}${ts.length}</span>
+      </div>`;
+    }
+    const cc = getCatColor(c);
+    const isAct = currentF===c;
+    // 有顏色：active 用分類色背景；非 active 用左側顏色條（窄版寬版一致）
+    const sStyle = isAct && catColors[c]
+      ? `background:${cc}`
+      : catColors[c]
+        ? `border-left:3px solid ${cc};border-radius:0 10px 10px 0;padding-left:11px`
+        : '';
+    return `<div class="scat ${isAct?'active':''}" onclick="setF('${c}')" style="${sStyle}">
+      <span class="scat-dot ${ov>0?'show':''}"></span>
+      <span class="scat-abbr">${abbr}</span>
+      <span class="scat-label">${c}</span>
+      <span class="scat-count">${ov>0?ov+'/':''}${ts.length}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('catSelect').innerHTML = allC.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function render() {
+  const list = document.getElementById('list'); const today = getToday();
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  let f = allT.filter(t => {
+    const d = fmtD(t.DueDate);
+    if (currentF === '已完成') return t.Status === 'Done';
+    if (currentF === '今天') return t.Status !== 'Done' && d && d <= today;
+    if (currentF === '全部') return t.Status !== 'Done';
+    return String(t.Category) === currentF && t.Status !== 'Done';
+  });
+  if (q) f = f.filter(t => String(t.Task||"").toLowerCase().includes(q));
+  f.sort((a,b) => {
+    // 已完成清單：依異動時間降序（最近在最上面）
+    if (currentF === '已完成') return (b.mTime||0) - (a.mTime||0);
+    // 其他清單：依截止日期 → 優先級 → 異動時間
+    const dA = fmtD(a.DueDate)||'9999-12-31', dB = fmtD(b.DueDate)||'9999-12-31';
+    if (dA !== dB) return dA.localeCompare(dB);
+    if ((a.Priority||99) !== (b.Priority||99)) return (a.Priority||99) - (b.Priority||99);
+    return (b.mTime||0) - (a.mTime||0);
+  });
+  if (!f.length) {
+    const emSvg = {
+      今天: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" style="color:#34C759"><polyline points="20 6 9 17 4 12"/></svg>`,
+      已完成: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" style="color:#FF9500"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+      全部: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" style="color:#8E8E93"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="12" y2="17"/></svg>`,
+      default: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" style="color:#8E8E93"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`
+    };
+    const ms = {今天:'今日無待辦', 已完成:'還沒有已完成的任務', 全部:'目前沒有任何待辦'};
+    list.innerHTML = `<div class="empty-state"><span class="emo">${emSvg[currentF]||emSvg.default}</span>${ms[currentF]||`「${currentF}」目前無任務`}</div>`;
+    return;
+  }
+  const showCat = currentF==='今天' || currentF==='全部' || currentF==='已完成';
+  list.innerHTML = f.map(t => {
+    const d = fmtD(t.DueDate)||''; const io = d && d < today && t.Status !== 'Done';
+    const catColor = getCatColor(t.Category||'');
+    const hasColor = catColors[t.Category||''];
+    return `<div class="card ${io?'overdue-card':''} ${hasColor&&!io?'cat-colored':''}"
+      style="${hasColor&&!io?`--cat-color:${catColor}`:''}">
+      <div class="chk-area" onclick="toggleT('${t.ID}')"><div class="checkbox ${t.Status==='Done'?'done':''}"></div></div>
+      <div class="info"
+        onclick="ctxShowMenu(event,'${t.ID}')"
+        ontouchstart="ctxLongStart(event,'${t.ID}')"
+        ontouchmove="ctxLongMove()"
+        ontouchend="ctxLongEnd()">
+        <div class="task-title ${t.Status==='Done'?'done':''}">${t.Task||'未命名'}</div>
+        <div class="task-meta">
+          ${showCat ? `<span class="meta-cat" style="background:${catColor}">${t.Category||'未分類'}</span>` : ''}
+          ${d ? `<span class="meta-date ${io?'overdue':''}">${d}</span>` : ''}
+          <span class="pri-badge">P${t.Priority||99}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function save() {
+  const rawId = document.getElementById('editId').value;
+  const isNew = !rawId; const id = rawId || ('T'+Date.now()); const mTime = Date.now();
+  const data = {
+    task: document.getElementById('taskInput').value.trim(),
+    dueDate: document.getElementById('dateInput').value,
+    category: document.getElementById('catSelect').value,
+    priority: parseInt(document.getElementById('priInput').value) || 99,
+    note: document.getElementById('noteInput').value, mTime
+  };
+  if (!data.task) { document.getElementById('taskInput').focus(); return; }
+
+  // 編輯模式：比對是否有任何欄位異動
+  if (!isNew) {
+    const orig = allT.find(x => String(x.ID) === String(id));
+    if (orig) {
+      const noChange =
+        data.task     === (orig.Task||'') &&
+        data.dueDate  === (fmtD(orig.DueDate)||'') &&
+        data.category === (orig.Category||'') &&
+        data.priority === (orig.Priority||99) &&
+        data.note     === (orig.Note||'');
+      if (noChange) {
+        closeM('taskM'); // 無異動，直接關閉不同步
+        return;
+      }
+    }
+  }
+
+  const idx = allT.findIndex(x => String(x.ID) === String(id));
+  if (idx > -1) allT[idx] = {...allT[idx], Task:data.task, DueDate:data.dueDate, Category:data.category, Priority:data.priority, Note:data.note, mTime};
+  else allT.push({ID:id, Status:'Pending', Task:data.task, DueDate:data.dueDate, Category:data.category, Priority:data.priority, Note:data.note, mTime});
+  lastUsedCat = data.category;
+  saveLocal(); render(); renderSidebar(); closeM('taskM');
+  await pushOp(isNew?'addTask':'updateTask', {id,data}, isNew?`新增「${data.task}」`:`更新「${data.task}」`);
+}
+async function toggleT(id) {
+  const t = allT.find(x => String(x.ID) === String(id)); if (!t) return;
+  const ns = t.Status === 'Done' ? 'Pending' : 'Done';
+  t.Status = ns; t.mTime = Date.now(); saveLocal(); render(); renderSidebar();
+  await pushOp('toggleTask', {id}, `「${t.Task||id}」→${ns==='Done'?'完成':'待辦'}`);
+}
+async function delTask() {
+  const id = document.getElementById('editId').value; if (!id || !confirm("確定刪除？")) return;
+  const t = allT.find(x => String(x.ID) === String(id));
+  allT = allT.filter(x => String(x.ID) !== String(id));
+  saveLocal(); render(); renderSidebar(); closeM('taskM');
+  await pushOp('deleteTask', {id}, `刪除「${t?t.Task:id}」`);
+}
+
+function openCatM() { renderCatList(); openModal('catM'); }
+function renderCatList() {
+  const el = document.getElementById('catList');
+  if (!allC.length) { el.innerHTML = '<p style="color:var(--gray);text-align:center;padding:16px 0;font-size:14px;">尚無分類</p>'; return; }
+  el.innerHTML = allC.map((c,i) => `
+    <div class="cat-row" data-idx="${i}">
+      <div class="cat-color-dot" style="background:${getCatColor(c)}"
+        onclick="openColorPicker('${c}', this)" title="設定顏色"></div>
+      <span class="cat-name">${c}</span>
+      <div class="cat-acts">
+        <button class="move-btn" onclick="moveC(${i},-1)" ${i===0?'disabled':''} title="上移">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button class="move-btn" onclick="moveC(${i},1)" ${i===allC.length-1?'disabled':''} title="下移">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <span class="cat-act" style="color:var(--primary)" onclick="renameC('${c}')">改名</span>
+        <span class="cat-act" style="color:var(--red)" onclick="delC('${c}')">刪除</span>
+      </div>
+    </div>`).join('');
+}
+function moveC(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= allC.length) return;
+  const moved = allC.splice(idx, 1)[0];
+  allC.splice(newIdx, 0, moved);
+  catOrder = [...allC];
+  saveLocal(); renderCatList(); renderSidebar();
+  syncCatOrder();
+}
+async function syncCatOrder() {
+  const order = allC.map((name, idx) => ({
+    name,
+    sortOrder: (idx + 1) * 10,
+    color: catColors[name] || ''
+  }));
+  await pushOp('reorderCategories', { order }, '分類順序已調整');
+}
+async function addC() {
+  const n = document.getElementById('newC').value.trim(); if (!n) return;
+  allC.push(n); catOrder=[...allC]; document.getElementById('newC').value="";
+  saveLocal(); renderSidebar(); renderCatList();
+  await pushOp('addCategory', {name:n, color:catColors[n]||''}, `新增分類「${n}」`);
+}
+async function delC(name) {
+  if (!confirm(`刪除分類「${name}」？`)) return;
+  allC=allC.filter(c=>c!==name); catOrder=catOrder.filter(c=>c!==name);
+  saveLocal(); renderSidebar(); renderCatList();
+  await pushOp('deleteCategory', {name}, `刪除分類「${name}」`);
+}
+async function renameC(oldN) {
+  const newN = prompt("新名稱：", oldN); if (!newN||newN===oldN) return;
+  allC=allC.map(c=>c===oldN?newN:c); catOrder=catOrder.map(c=>c===oldN?newN:c);
+  allT.forEach(t=>{if(t.Category===oldN)t.Category=newN;});
+  saveLocal(); renderSidebar(); renderCatList(); render();
+  await pushOp('renameCategory', {old:oldN,name:newN}, `改名「${oldN}」→「${newN}」`);
+}
+
+function setF(c) { currentF=c; document.getElementById('vTitle').textContent=c; render(); renderSidebar(); }
+function toggleSearch() {
+  const wrap = document.getElementById('srchWrap');
+  const inp  = document.getElementById('searchInput');
+  const isOpen = wrap.classList.contains('open');
+  if (isOpen) {
+    inp.value = '';
+    handleSearch();
+    wrap.classList.remove('open');
+    inp.blur();
+  } else {
+    wrap.classList.add('open');
+    setTimeout(() => inp.focus(), 280);
+  }
+}
+function handleSearch() {
+  const val = document.getElementById('searchInput').value;
+  document.getElementById('srchX').style.display = val ? 'block' : 'none';
+  // 有文字時讓圖示閃爍提示
+  document.getElementById('srchIcon').classList.toggle('has-query', !!val);
+  render();
+}
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  handleSearch();
+  // 清空後維持展開，方便重新輸入
+}
+
+
+
+// ── 快速選單（點擊）＋ 長壓編輯 ──────────────────────────────────
+let _lpTimer   = null;
+let _lpFired   = false;
+let _ctxTaskId = null;
+
+function ctxLongStart(e, id) {
+  _lpFired = false;
+  const x = e.touches[0].clientX;
+  const y = e.touches[0].clientY;
+  _lpTimer = setTimeout(() => {
+    _lpTimer = null;
+    _lpFired = true;
+    openEdit(id);
+  }, 500);
+}
+function ctxLongMove() {
+  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+}
+function ctxLongEnd() {
+  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+}
+
+// 點擊顯示選單
+function ctxShowMenu(e, id) {
+  if (_lpFired) { _lpFired = false; return; }
+  e.stopPropagation();
+  _ctxTaskId = id;
+  const rect = e.currentTarget.getBoundingClientRect();
+  showCtxMenu(rect);
+}
+
+function showCtxMenu(rect) {
+  document.getElementById('ctxOverlay').classList.add('open');
+  const menu = document.getElementById('ctxMenu');
+  menu.classList.add('open');
+  const mw = 210, mh = 216, gap = 6;
+  const midScreen = window.innerHeight / 2;
+  const isUpperHalf = rect.top < midScreen;
+  // 水平：對齊任務中央，不超出螢幕
+  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - mw / 2, window.innerWidth - mw - 8));
+  // 垂直：上半部往下展開（從任務下緣），下半部往上展開（從任務上緣）
+  let top;
+  if (isUpperHalf) {
+    top = rect.bottom + gap;
+    if (top + mh > window.innerHeight - 8) top = window.innerHeight - mh - 8;
+  } else {
+    top = rect.top - mh - gap;
+    if (top < 8) top = 8;
+  }
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+  requestAnimationFrame(() => menu.classList.add('show'));
+}
+function closeCtxMenu() {
+  document.getElementById('ctxOverlay').classList.remove('open');
+  const menu = document.getElementById('ctxMenu');
+  menu.classList.remove('open', 'show');
+  _ctxTaskId = null;
+}
+function closeMoveMenu() {
+  document.getElementById('moveOverlay').classList.remove('open');
+  document.getElementById('moveMenu').classList.remove('open');
+}
+
+// 設為今天
+async function ctxSetToday() {
+  const id = _ctxTaskId; closeCtxMenu();
+  const t = allT.find(x => String(x.ID) === String(id)); if (!t) return;
+  const today = getToday(); if (fmtD(t.DueDate) === today) return;
+  t.DueDate = today; t.mTime = Date.now();
+  saveLocal(); render(); renderSidebar();
+  await pushOp('updateTask', {id:t.ID, data:{task:t.Task, dueDate:today, category:t.Category, priority:t.Priority, note:t.Note||'', mTime:t.mTime}}, `「${t.Task}」設為今天`);
+}
+
+// 設為明天
+async function ctxSetTomorrow() {
+  const id = _ctxTaskId; closeCtxMenu();
+  const t = allT.find(x => String(x.ID) === String(id)); if (!t) return;
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  const tomorrow = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if (fmtD(t.DueDate) === tomorrow) return;
+  t.DueDate = tomorrow; t.mTime = Date.now();
+  saveLocal(); render(); renderSidebar();
+  await pushOp('updateTask', {id:t.ID, data:{task:t.Task, dueDate:tomorrow, category:t.Category, priority:t.Priority, note:t.Note||'', mTime:t.mTime}}, `「${t.Task}」設為明天`);
+}
+
+// 移動分類
+function ctxOpenMove() {
+  const id = _ctxTaskId;
+  document.getElementById('ctxMenu').classList.remove('open','show');
+  document.getElementById('ctxOverlay').classList.remove('open');
+  const t = allT.find(x => String(x.ID) === String(id));
+  const moveMenu = document.getElementById('moveMenu');
+  moveMenu.innerHTML = allC.map(c => `
+    <div class="move-cat-item" onclick="ctxMoveTocat('${c}')">
+      <span class="move-cat-dot" style="background:${getCatColor(c)}"></span>
+      ${c}${t && t.Category===c?' ✓':''}
+    </div>`).join('');
+  document.getElementById('moveOverlay').classList.add('open');
+  moveMenu.classList.add('open');
+}
+async function ctxMoveTocat(catName) {
+  const id = _ctxTaskId; closeMoveMenu(); _ctxTaskId = null;
+  const t = allT.find(x => String(x.ID) === String(id));
+  if (!t || t.Category === catName) return;
+  t.Category = catName; t.mTime = Date.now();
+  saveLocal(); render(); renderSidebar();
+  await pushOp('updateTask', {id:t.ID, data:{task:t.Task, dueDate:fmtD(t.DueDate), category:catName, priority:t.Priority, note:t.Note||'', mTime:t.mTime}}, `「${t.Task}」移至「${catName}」`);
+}
+
+// 標為已完成
+async function ctxSetDone() {
+  const id = _ctxTaskId; closeCtxMenu();
+  const t = allT.find(x => String(x.ID) === String(id));
+  if (!t || t.Status === 'Done') return;
+  t.Status = 'Done'; t.mTime = Date.now();
+  saveLocal(); render(); renderSidebar();
+  await pushOp('toggleTask', {id}, `「${t.Task}」→完成`);
+}
+
+// overlay 關閉
+document.getElementById('ctxOverlay').addEventListener('click', () => closeCtxMenu());
+document.getElementById('moveOverlay').addEventListener('click', () => { closeMoveMenu(); _ctxTaskId = null; });
+
+// 側欄滑動時選單開著則停用
+
+// ── 到場時間 ──────────────────────────────────────────────────────
+function toggleArrival() {
+  const btn = document.getElementById('arrivalBtn');
+  if (btn.classList.contains('recorded')) {
+    btn.textContent = '到場時間';
+    btn.classList.remove('recorded');
+  } else {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    btn.textContent = hh + ':' + mm;
+    btn.classList.add('recorded');
+  }
+}
+
+
+// ── 快速新增 ─────────────────────────────────────────────────────
+let _fabLpTimer = null, _fabLpFired = false;
+
+function fabTouchStart() {
+  _fabLpFired = false;
+  _fabLpTimer = setTimeout(() => {
+    _fabLpTimer = null;
+    _fabLpFired = true;
+    openAdd(); // 長壓→完整新增
+  }, 500);
+}
+function fabTouchMove()  { if (_fabLpTimer) { clearTimeout(_fabLpTimer); _fabLpTimer = null; } }
+function fabTouchEnd()   { if (_fabLpTimer) { clearTimeout(_fabLpTimer); _fabLpTimer = null; } }
+function fabClick()      { if (_fabLpFired) { _fabLpFired = false; return; } openQuick(); }
+
+function openQuick() {
+  const sel = document.getElementById('quickCat');
+  sel.innerHTML = allC.map(c => `<option value="${c}">${c}</option>`).join('');
+  const sys = ['今天','全部','已完成'];
+  if (!sys.includes(currentF) && allC.includes(currentF)) sel.value = currentF;
+  else if (lastUsedCat && allC.includes(lastUsedCat)) sel.value = lastUsedCat;
+
+  // 定位在 FAB 下方
+  const fab = document.getElementById('fab');
+  const fr  = fab.getBoundingClientRect();
+  const m   = document.getElementById('quickM');
+  m.classList.add('open');
+  // 水平：對齊 FAB 左側，不超出螢幕右邊
+  const mw = 260;
+  let left = fr.left;
+  if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+  m.style.left = Math.max(8, left) + 'px';
+  m.style.top  = (fr.bottom + 10) + 'px';
+
+  document.getElementById('quickOverlay').classList.add('open');
+  // 游標直接進入輸入欄
+  document.getElementById('quickInput').focus();
+}
+
+function closeQuick() {
+  document.getElementById('quickM').classList.remove('open');
+  document.getElementById('quickOverlay').classList.remove('open');
+  document.getElementById('quickInput').value = '';
+}
+
+async function saveQuick() {
+  const task = document.getElementById('quickInput').value.trim();
+  if (!task) { document.getElementById('quickInput').focus(); return; }
+  const category = document.getElementById('quickCat').value;
+  const id = 'T' + Date.now();
+  const mTime = Date.now();
+  allT.push({ ID:id, Task:task, Category:category, DueDate:getToday(), Status:'Pending', Priority:99, Note:'', mTime });
+  lastUsedCat = category;
+  saveLocal(); render(); renderSidebar();
+  closeQuick();
+  await pushOp('addTask', {id, data:{task, category, dueDate:getToday(), priority:99, note:'', mTime}}, `新增「${task}」`);
+}
+
+function openAdd() {
+  document.getElementById('editId').value = "";
+  document.getElementById('taskInput').value = "";
+  document.getElementById('dateInput').value = getToday();
+  document.getElementById('priInput').value = "99";
+  document.getElementById('noteInput').value = "";
+  document.getElementById('taskSheetTitle').textContent = "新增任務";
+  document.getElementById('delBtn').style.display = 'none';
+  const systemF = ['今天','全部','已完成'];
+  let defaultCat = '';
+  if (!systemF.includes(currentF)) { defaultCat = currentF; }
+  else {
+    if (lastUsedCat && allC.includes(lastUsedCat)) defaultCat = lastUsedCat;
+    else if (allC.length > 0) defaultCat = allC[0];
+  }
+  const sel = document.getElementById('catSelect');
+  if (defaultCat && sel) sel.value = defaultCat;
+  openModal('taskM');
+  setTimeout(() => document.getElementById('taskInput').focus(), 320);
+}
+function openEdit(id) {
+  const t = allT.find(x => String(x.ID) === String(id)); if (!t) return;
+  document.getElementById('editId').value = id;
+  document.getElementById('taskInput').value = t.Task||"";
+  document.getElementById('dateInput').value = fmtD(t.DueDate);
+  document.getElementById('catSelect').value = t.Category||"";
+  document.getElementById('priInput').value = t.Priority||99;
+  document.getElementById('noteInput').value = t.Note||"";
+  document.getElementById('taskSheetTitle').textContent = "編輯任務";
+  document.getElementById('delBtn').style.display = 'block';
+  openModal('taskM');
+}
+
+
+
+
+// ── Excel / CSV 批次匯入 ─────────────────────────────────────────
+// 流程：選檔 → 解析標題 → 顯示欄位對應視窗 → 使用者確認 → 存本機 + 加佇列
+
+let _importRows = [];   // 解析後的原始資料列
+let _importHeaders = []; // 標題列
+
+async function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const resultEl = document.getElementById('importResult');
+  resultEl.style.display = 'block';
+  resultEl.className = 'import-result';
+  resultEl.textContent = '解析檔案中…';
+
+  try {
+    let rows = [];
+    if (file.name.endsWith('.csv')) {
+      rows = await parseCsv(file);
+    } else {
+      rows = await parseXlsx(file);
+    }
+
+    if (!rows.length || !rows[0].length) {
+      resultEl.className = 'import-result err';
+      resultEl.textContent = '檔案內容為空，請確認格式正確。';
+      return;
+    }
+
+    _importRows = rows;
+    _importHeaders = rows[0].map(h => String(h).trim());
+
+    // 建立選項（第一個是「不匯入」）
+    const selects = ['mapTask','mapCategory','mapDueDate','mapPriority','mapNote'];
+    const autoMap = { // 自動偵測常見標題
+      mapTask:     ['task','任務','任務名稱','title','名稱','主旨','subject'],
+      mapCategory: ['category','分類','cat'],
+      mapDueDate:  ['duedate','due date','due','截止日期','日期','date','期限','deadline','結束日期'],
+      mapPriority: ['priority','優先級','優先','pri'],
+      mapNote:     ['note','備註','notes','描述'],
+    };
+
+    selects.forEach((id, fi) => {
+      const sel = document.getElementById(id);
+      sel.innerHTML = '<option value="-1">— 不匯入 —</option>' +
+        _importHeaders.map((h, i) => `<option value="${i}">${h}</option>`).join('');
+      // 自動對應
+      const keywords = autoMap[id];
+      const autoIdx = _importHeaders.findIndex(h =>
+        keywords.some(k => h.toLowerCase().replace(/\s/g,'') === k.replace(/\s/g,''))
+      );
+      sel.value = autoIdx >= 0 ? autoIdx : -1;
+    });
+
+    // 顯示預覽筆數
+    const dataCount = rows.length - 1;
+    document.getElementById('importMapSub').textContent =
+      `共 ${dataCount} 筆資料，請確認欄位對應後按「開始匯入」`;
+
+    resultEl.style.display = 'none';
+    document.getElementById('importMapModal').classList.add('open');
+
+  } catch(e) {
+    resultEl.className = 'import-result err';
+    resultEl.textContent = '解析失敗：' + (e.message || '未知錯誤');
+  }
+}
+
+function closeImportMap() {
+  document.getElementById('importMapModal').classList.remove('open');
+  _importRows = [];
+  _importHeaders = [];
+}
+
+function confirmImport() {
+  const idxTask     = parseInt(document.getElementById('mapTask').value);
+  const idxCategory = parseInt(document.getElementById('mapCategory').value);
+  const idxDueDate  = parseInt(document.getElementById('mapDueDate').value);
+  const idxPriority = parseInt(document.getElementById('mapPriority').value);
+  const idxNote     = parseInt(document.getElementById('mapNote').value);
+
+  if (idxTask < 0) {
+    alert('請選擇「任務名稱」對應的欄位');
+    return;
+  }
+
+  const resultEl = document.getElementById('importResult');
+  const dataRows = _importRows.slice(1).filter(r => r.some(c => String(c).trim()));
+  const mTimeBase = Date.now();
+  let added = 0, skipped = 0, errors = 0;
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const task = String(row[idxTask] ?? '').trim();
+    if (!task) { errors++; continue; }
+
+    const category = idxCategory >= 0 ? String(row[idxCategory] ?? '').trim() : '';
+    const dueDate  = idxDueDate  >= 0 ? formatImportDate(row[idxDueDate]) : '';
+    const priority = idxPriority >= 0 ? (parseInt(row[idxPriority]) || 99) : 99;
+    const note     = idxNote     >= 0 ? String(row[idxNote] ?? '').trim() : '';
+
+    // 跳過重複（同任務名稱 + 同分類）
+    const isDuplicate = allT.some(t =>
+      String(t.Task||'').trim() === task &&
+      String(t.Category||'').trim() === category
+    );
+    if (isDuplicate) { skipped++; continue; }
+
+    const id = 'T' + (mTimeBase + i);
+    const mTime = mTimeBase + i;
+    const newTask = { ID:id, Task:task, Category:category, DueDate:dueDate,
+      Status:'Pending', Priority:priority, Note:note, mTime };
+
+    // 加入本機
+    allT.push(newTask);
+
+    // 加入佇列（下次同步時推送）
+    enqueue('addTask', {
+      id,
+      data: { task, category, dueDate, priority, note, mTime, ID: id }
+    }, `匯入「${task}」`);
+
+    added++;
+  }
+
+  saveLocal(); render(); renderSidebar();
+  closeImportMap();
+
+  resultEl.style.display = 'block';
+  resultEl.className = 'import-result ok';
+  let msg = `匯入完成：新增 ${added} 筆`;
+  if (skipped > 0) msg += `，跳過重複 ${skipped} 筆`;
+  if (errors > 0)  msg += `，略過空白列 ${errors} 筆`;
+  msg += '。下次同步時會推送至雲端。';
+  resultEl.textContent = msg;
+
+  pushLog(`批次匯入 ${added} 筆任務，加入佇列待同步`, 'info');
+}
+
+function formatImportDate(val) {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Excel 日期序號
+  if (/^\d{5}$/.test(s)) {
+    const d = new Date(Date.UTC(1899, 11, 30) + parseInt(s) * 86400000);
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }
+  // 其他格式嘗試解析
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }
+  return '';
+}
+
+// CSV 解析（支援引號內含逗號，自動偵測 UTF-8 / Big5 編碼）
+function parseCsv(file) {
+  return new Promise((resolve, reject) => {
+    const tryParse = (text) => {
+      const rows = [];
+      let cur = [], field = '', inQ = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQ) {
+          if (c === '"' && text[i+1] === '"') { field += '"'; i++; }
+          else if (c === '"') inQ = false;
+          else field += c;
+        } else {
+          if (c === '"') inQ = true;
+          else if (c === ',') { cur.push(field); field = ''; }
+          else if (c === '\n' || (c === '\r' && text[i+1] === '\n')) {
+            if (c === '\r') i++;
+            cur.push(field); rows.push(cur); cur = []; field = '';
+          } else field += c;
+        }
+      }
+      if (field || cur.length) { cur.push(field); if(cur.some(f=>f)) rows.push(cur); }
+      return rows;
+    };
+
+    // 用 Big5 讀取，再嘗試 UTF-8，選擇能正確解碼的版本
+    // 策略：同時用兩種編碼讀，比較哪個結果不含亂碼字元
+    const isLikelyBig5 = (buf) => {
+      // 檢查前 512 bytes，若有 Big5 雙位元組特徵（0x81-0xFE 開頭）就用 Big5
+      const bytes = new Uint8Array(buf.slice(0, 512));
+      for (let i = 0; i < bytes.length - 1; i++) {
+        const b = bytes[i];
+        if (b >= 0x81 && b <= 0xFE) {
+          const b2 = bytes[i+1];
+          if ((b2 >= 0x40 && b2 <= 0x7E) || (b2 >= 0xA1 && b2 <= 0xFE)) {
+            return true; // 符合 Big5 雙位元組特徵
+          }
+        }
+      }
+      return false;
+    };
+
+    // 先用 ArrayBuffer 讀取判斷編碼，再選對的編碼解碼
+    const abReader = new FileReader();
+    abReader.onload = e => {
+      const buf = e.target.result;
+      const encoding = isLikelyBig5(buf) ? 'Big5' : 'UTF-8';
+      const textReader = new FileReader();
+      textReader.onload = e2 => {
+        try { resolve(tryParse(e2.target.result)); }
+        catch(err) { reject(err); }
+      };
+      textReader.onerror = () => reject(new Error('CSV 讀取失敗'));
+      textReader.readAsText(file, encoding);
+    };
+    abReader.onerror = () => reject(new Error('CSV 讀取失敗'));
+    abReader.readAsArrayBuffer(file);
+  });
+}
+
+// XLSX 解析（動態載入 SheetJS）
+function parseXlsx(file) {
+  return new Promise((resolve, reject) => {
+    if (window.XLSX) { readXlsx(file, resolve, reject); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.onload = () => readXlsx(file, resolve, reject);
+    script.onerror = () => reject(new Error('無法載入 XLSX 解析器，請確認網路連線'));
+    document.head.appendChild(script);
+  });
+}
+
+function readXlsx(file, resolve, reject) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {
+        type: 'array',
+        cellDates: false,
+        codepage: 950,   // 支援繁體中文 Big5/CP950
+        raw: false,      // 強制轉字串，避免亂碼
+      });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        defval: '',
+        raw: false,      // 欄位值也轉成字串
+      });
+      resolve(rows);
+    } catch(err) { reject(err); }
+  };
+  reader.onerror = () => reject(new Error('Excel 讀取失敗'));
+  reader.readAsArrayBuffer(file);
+}
+
+
+async function init() {
+  loadLocal(); 
+  applyCatOrder();
+  render(); 
+  renderSidebar(); 
+  updateBanner(); 
+  applySide();
+  if (pendingQueue.length > 0) {
+    pushLog(`發現 ${pendingQueue.length} 筆離線操作待同步`, 'warn');
+  }
+  await fullSync('啟動');
+}
+
+// 頁面載入：先檢查登入狀態
+window.onload = () => {
+  if (checkLogin()) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    init();
+  } else {
+    // 顯示登入畫面，並在輸入框可見時聚焦
+    setTimeout(() => document.getElementById('loginPwd').focus(), 100);
+  }
+};
+</script>
+</body>
+</html>
